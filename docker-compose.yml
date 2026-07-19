@@ -1,0 +1,10 @@
+services:
+  docuflow-api:
+    build: .
+    container_name: docuflow-api
+    ports:
+      - "8000:8000"
+    environment:
+      MAX_UPLOAD_MB: "100"
+    restart: unless-stopped
+
