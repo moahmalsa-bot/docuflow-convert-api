@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, Request, UploadFile
 
 from app.converters import (
     compress_pdf,
@@ -12,7 +12,7 @@ from app.converters import (
     rotate_pdf,
     split_pdf,
 )
-from app.services.excel_pdf import excel_download_response, excel_to_pdf_job
+from app.services.excel_pdf import delete_excel_output, excel_download_response, excel_to_pdf_job
 from app.utils.files import cleanup_path, create_job_dir, response_for_file, save_upload, save_uploads
 from app.utils.validation import validate_pdf_batch_page_count, validate_pdf_page_count
 
@@ -115,6 +115,11 @@ async def convert_excel_to_pdf(request: Request, file: UploadFile = File(...)):
 @router.get("/download/{job_id}/{file_name}")
 def download_converted(job_id: str, file_name: str):
     return excel_download_response(job_id, file_name)
+
+
+@router.delete("/jobs/{job_id}")
+def delete_retained_conversion(job_id: str, x_delete_token: str = Header(..., alias="X-Delete-Token")):
+    return delete_excel_output(job_id, x_delete_token)
 
 
 @router.post("/convert/image-to-pdf")
