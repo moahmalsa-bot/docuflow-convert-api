@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.utils.files import cleanup_old_directories, sanitize_filename
+from app.utils.files import sanitize_filename
 
 
 ORIGINAL_VERSION_ID = "v0000"
