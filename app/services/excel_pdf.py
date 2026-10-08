@@ -20,6 +20,7 @@ in-memory registry — and never deletes the file, so repeated downloads work.
 
 import hashlib
 import logging
+import secrets
 import os
 import re
 import shutil
@@ -271,6 +272,11 @@ def excel_to_pdf_job(input_file: Path, job_dir: Path, request: Request) -> dict:
         safe_file_name = _safe_pdf_name(input_file.stem)
         final_dir = OUTPUT_ROOT / job_id
         final_dir.mkdir(parents=True, exist_ok=True)
+        delete_token = secrets.token_urlsafe(32)
+        (final_dir / ".delete-token.sha256").write_text(
+            hashlib.sha256(delete_token.encode("utf-8")).hexdigest(),
+            encoding="utf-8",
+        )
         final_path = (final_dir / safe_file_name).resolve()
         shutil.copy2(pdf_path, final_path)
 
@@ -294,6 +300,10 @@ def excel_to_pdf_job(input_file: Path, job_dir: Path, request: Request) -> dict:
             "sheetCount": sheet_count,
             "pageCount": page_count,
             "fileSize": size,
+            "retentionHours": max(1, OUTPUT_MAX_AGE_SECONDS // 3600),
+            "deleteToken": delete_token,
+            "deleteUrl": f"{base}/jobs/{job_id}",
+            "trainingUse": False,
         }
     finally:
         shutil.rmtree(profile_dir, ignore_errors=True)
@@ -347,3 +357,21 @@ def excel_download_response(job_id: str, file_name: str):
             "Cache-Control": "no-store",
         },
     )
+
+
+
+def delete_excel_output(job_id: str, delete_token: str) -> dict:
+    if not re.fullmatch(r"[0-9a-f]{32}", job_id) or not delete_token:
+        raise HTTPException(status_code=400, detail="Invalid delete request")
+    directory = (OUTPUT_ROOT / job_id).resolve()
+    if not str(directory).startswith(str(OUTPUT_ROOT.resolve()) + os.sep) or not directory.is_dir():
+        raise HTTPException(status_code=404, detail="Conversion output not found")
+    token_path = directory / ".delete-token.sha256"
+    if not token_path.is_file():
+        raise HTTPException(status_code=403, detail="Delete token unavailable")
+    expected = token_path.read_text(encoding="utf-8").strip()
+    actual = hashlib.sha256(delete_token.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(expected, actual):
+        raise HTTPException(status_code=403, detail="Invalid delete token")
+    shutil.rmtree(directory, ignore_errors=True)
+    return {"deleted": True, "job_id": job_id}
