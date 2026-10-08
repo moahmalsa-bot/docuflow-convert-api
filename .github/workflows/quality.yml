@@ -23,6 +23,10 @@ jobs:
   contracts:
     name: Contracts
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      OUTPUT_DIR: /tmp/docuflow-ci-output
+      DOCUFLOW_DOCUMENT_STORE: /tmp/docuflow-ci-documents
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
