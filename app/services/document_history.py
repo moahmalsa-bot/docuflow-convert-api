@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import secrets
 import shutil
 import tempfile
 import time
@@ -15,6 +17,14 @@ from app.utils.files import cleanup_old_directories, sanitize_filename
 ORIGINAL_VERSION_ID = "v0000"
 
 
+def document_ttl_hours() -> int:
+    return int(os.getenv("DOCUFLOW_DOCUMENT_TTL_HOURS", "24"))
+
+
+def _delete_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def document_store_root() -> Path:
     root = Path(os.getenv("DOCUFLOW_DOCUMENT_STORE", Path(tempfile.gettempdir()) / "docuflow-documents"))
     root.mkdir(parents=True, exist_ok=True)
@@ -22,8 +32,27 @@ def document_store_root() -> Path:
 
 
 def cleanup_stale_documents() -> int:
-    ttl_hours = int(os.getenv("DOCUFLOW_DOCUMENT_TTL_HOURS", "24"))
-    return cleanup_old_directories(document_store_root(), ttl_hours * 3600)
+    root = document_store_root()
+    ttl_seconds = document_ttl_hours() * 3600
+    now = int(time.time())
+    removed = 0
+    for child in root.iterdir():
+        if not child.is_dir() or child.is_symlink():
+            continue
+        try:
+            metadata_file = child / "metadata.json"
+            if metadata_file.exists():
+                metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+                expires_at = int(metadata.get("expires_at") or (int(metadata.get("created_at") or 0) + ttl_seconds))
+                expired = expires_at <= now
+            else:
+                expired = now - int(child.stat().st_mtime) > ttl_seconds
+            if expired:
+                shutil.rmtree(child, ignore_errors=True)
+                removed += 1
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return removed
 
 
 def create_document_dir() -> tuple[str, Path]:
@@ -42,6 +71,19 @@ def document_dir(document_id: str) -> Path:
     path = document_store_root() / document_id
     if not path.exists():
         raise HTTPException(status_code=404, detail="Document not found")
+
+    metadata_file = path / "metadata.json"
+    if metadata_file.exists():
+        try:
+            metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+            expires_at = int(metadata.get("expires_at") or 0)
+            if expires_at and expires_at <= int(time.time()):
+                shutil.rmtree(path, ignore_errors=True)
+                raise HTTPException(status_code=404, detail="Document session expired and was deleted")
+        except HTTPException:
+            raise
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
     return path
 
 
@@ -71,6 +113,8 @@ def initialize_document(
     version_file = directory / "versions" / "v0000-original.pdf"
     shutil.copy2(source_pdf, version_file)
     now = int(time.time())
+    ttl_hours = document_ttl_hours()
+    delete_token = secrets.token_urlsafe(32)
     metadata = {
         **analysis_payload,
         "document_id": document_id,
@@ -89,9 +133,22 @@ def initialize_document(
         "undone_versions": [],
         "created_at": now,
         "updated_at": now,
+        "expires_at": now + ttl_hours * 3600,
+        "retention_hours": ttl_hours,
+        "training_use": False,
+        "delete_token_hash": _delete_token_hash(delete_token),
     }
     save_metadata(document_id, metadata)
-    return metadata
+    response = dict(metadata)
+    response["delete_token"] = delete_token
+    response["delete_url"] = f"/pdf/session/{document_id}"
+    response["privacy"] = {
+        "training_use": False,
+        "retention_hours": ttl_hours,
+        "expires_at": metadata["expires_at"],
+        "delete_now_supported": True,
+    }
+    return response
 
 
 def current_version(document_id: str) -> dict[str, Any]:
@@ -207,3 +264,19 @@ def history(document_id: str) -> dict[str, Any]:
         "can_undo": len(metadata.get("versions", [])) > 1,
         "can_redo": bool(metadata.get("undone_versions")),
     }
+
+
+
+def delete_document(document_id: str, delete_token: str) -> dict[str, Any]:
+    if not delete_token:
+        raise HTTPException(status_code=401, detail="Delete token is required")
+    directory = document_dir(document_id)
+    metadata_file = directory / "metadata.json"
+    if not metadata_file.exists():
+        raise HTTPException(status_code=404, detail="Document metadata not found")
+    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    expected = str(metadata.get("delete_token_hash") or "")
+    if not expected or not secrets.compare_digest(expected, _delete_token_hash(delete_token)):
+        raise HTTPException(status_code=403, detail="Invalid delete token")
+    shutil.rmtree(directory, ignore_errors=True)
+    return {"deleted": True, "document_id": document_id}
