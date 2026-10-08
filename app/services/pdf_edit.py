@@ -373,7 +373,8 @@ def _verify_visual_replacements(saved_pdf: Path, targets: list[dict[str, Any]]) 
             {
                 "event": "pdf_edit_verified_text",
                 "saved_output_file_path": str(saved_pdf),
-                "edited_pdf_text": extracted_text,
+                "edited_pdf_text_sha256": hashlib.sha256(extracted_text.encode("utf-8")).hexdigest(),
+                "edited_pdf_text_char_count": len(extracted_text),
             }
         )
     )
@@ -426,14 +427,15 @@ def _log_edit_resolution(
             {
                 "event": "pdf_edit_resolved_operation",
                 "resolved_object_id": operation.get("object_id"),
-                "original_text": operation.get("original_text"),
-                "replacement_text": operation.get("new_text"),
+                "original_text_sha256": hashlib.sha256(str(operation.get("original_text") or "").encode("utf-8")).hexdigest(),
+                "replacement_text_sha256": hashlib.sha256(str(operation.get("new_text") or "").encode("utf-8")).hexdigest(),
                 "resolved_page_number": operation.get("page"),
                 "resolved_bounding_box": operation.get("bounding_box"),
                 "visual_replacement_rect": _bbox(padded_rect),
                 "source_input_file_path": str(source_pdf),
                 "saved_output_file_path": str(scratch_pdf),
-                "extracted_text_before_edit": extracted_text_before,
+                "extracted_text_before_sha256": hashlib.sha256(extracted_text_before.encode("utf-8")).hexdigest(),
+                "extracted_text_before_char_count": len(extracted_text_before),
             }
         )
     )

@@ -1,10 +1,10 @@
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, Header, UploadFile
 from fastapi.responses import FileResponse
 
 from app.models.ai_models import AiEditApplyRequest, AiEditPlanRequest, UndoRedoRequest
 from app.models.pdf_models import EditApplyResponse, HistoryResponse, PdfAnalyzeResponse
 from app.services.ai_planner import plan_ai_edit
-from app.services.document_history import create_document_dir, download_pdf_path, history, redo, undo
+from app.services.document_history import create_document_dir, delete_document, download_pdf_path, history, redo, undo
 from app.services.pdf_analysis import analyze_pdf_document
 from app.services.pdf_edit import apply_ai_edit_operations, apply_pdf_edits
 from app.services.pdf_render import render_document_page
@@ -85,3 +85,9 @@ async def pdf_history_endpoint(document_id: str):
 async def download_ai_edited_pdf_endpoint(document_id: str, file_name: str):
     pdf_path = download_pdf_path(document_id, file_name)
     return FileResponse(path=pdf_path, media_type="application/pdf", filename=pdf_path.name)
+
+
+
+@router.delete("/pdf/session/{document_id}")
+async def delete_pdf_session_endpoint(document_id: str, x_delete_token: str = Header(..., alias="X-Delete-Token")):
+    return delete_document(document_id, x_delete_token)

@@ -11,6 +11,7 @@ REQUIRED = [
     "app/main.py",
     "app/api/conversion_routes.py",
     "app/api/pdf_routes.py",
+    "app/api/privacy_routes.py",
     "app/models/ai_models.py",
     "app/models/pdf_models.py",
     "app/services/ai_planner.py",
@@ -26,6 +27,7 @@ REQUIRED = [
     "requirements.txt",
     "tests/test_usage_protection.py",
     "tests/test_ocr_layout.py",
+    "tests/test_privacy_deletion.py",
 ]
 
 
@@ -143,3 +145,31 @@ if "tesseract-ocr-ara" not in docker_text or "OCR_LANGUAGES=ara+eng" not in dock
     fail("Docker image must ship Arabic and English Tesseract data")
 
 print("OCR Arabic/layout contracts: PASS")
+
+
+# Privacy contracts: no training use, bounded retention, and explicit delete-now endpoints.
+privacy_text = (ROOT / "app/api/privacy_routes.py").read_text(encoding="utf-8")
+history_text = (ROOT / "app/services/document_history.py").read_text(encoding="utf-8")
+ai_text = (ROOT / "app/services/ai_planner.py").read_text(encoding="utf-8")
+pdf_edit_text = (ROOT / "app/services/pdf_edit.py").read_text(encoding="utf-8")
+pdf_routes_text = (ROOT / "app/api/pdf_routes.py").read_text(encoding="utf-8")
+conversion_routes_text = (ROOT / "app/api/conversion_routes.py").read_text(encoding="utf-8")
+
+for token in ("docuflow_uses_files_for_training", "pdf_editor_session_max_hours", "delete_now_supported"):
+    if token not in privacy_text:
+        fail(f"Privacy policy contract missing: {token}")
+
+for token in ("delete_token_hash", "training_use", "expires_at", "delete_document"):
+    if token not in history_text:
+        fail(f"Document privacy contract missing: {token}")
+
+if "AI_PROVIDER_NO_TRAINING_CONFIRMED" not in ai_text:
+    fail("External AI must remain gated by an explicit no-training confirmation")
+if '"edited_pdf_text": extracted_text' in pdf_edit_text or '"extracted_text_before_edit": extracted_text_before' in pdf_edit_text:
+    fail("Document text must not be written to application logs")
+if '@router.delete("/pdf/session/{document_id}")' not in pdf_routes_text:
+    fail("PDF session delete endpoint missing")
+if '@router.delete("/jobs/{job_id}")' not in conversion_routes_text:
+    fail("Retained conversion delete endpoint missing")
+
+print("Privacy/deletion contracts: PASS")

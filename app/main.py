@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.conversion_routes import router as conversion_router
 from app.api.pdf_routes import router as pdf_router
+from app.api.privacy_routes import router as privacy_router
 from app.utils.files import ApiError, ConversionError, cleanup_stale_temp_jobs
 
 
@@ -32,7 +33,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],  # covers Content-Type, Accept, Authorization, X-Requested-With
         expose_headers=[
             "Content-Disposition",
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(conversion_router)
     app.include_router(pdf_router)
+    app.include_router(privacy_router)
     register_handlers(app)
     register_middleware(app)
     return app

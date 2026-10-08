@@ -450,3 +450,18 @@ Use the Render service URL as your frontend API base URL.
 - Tune `MAX_UPLOAD_MB` and Render instance size for your expected files.
 - OCR and Office conversions are CPU-heavy. Use larger instances or background jobs for high-volume workloads.
 - Temporary files are removed after each response is sent.
+
+
+## Privacy & retention
+
+DocuFlow does not use uploaded files or document content to train its own models.
+
+- Ordinary conversion working files are deleted after the response finishes. Crash leftovers are removed by the temporary-job cleanup window.
+- PDF analyze/editor sessions are retained for at most `DOCUFLOW_DOCUMENT_TTL_HOURS` (24 hours by default) and can be deleted immediately with `DELETE /pdf/session/{document_id}` plus the per-session `X-Delete-Token`.
+- Excel-to-PDF repeated-download copies are retained for at most `OUTPUT_MAX_AGE_SECONDS` (24 hours by default) and can be deleted immediately with `DELETE /jobs/{job_id}` plus the returned `X-Delete-Token`.
+- External AI calls are disabled unless `AI_PROVIDER_NO_TRAINING_CONFIRMED=true` is explicitly configured. Local deterministic AI-edit planning remains available without sending document content to an external model.
+- Document text is not written to application logs; edit diagnostics store hashes/counts instead.
+
+Public policy endpoints:
+- `GET /privacy` — machine-readable policy
+- `GET /privacy-policy` — simple human-readable policy
