@@ -249,6 +249,5 @@ def compress_pdf(input_pdf: Path, output_pdf: Path) -> Path:
             f"-sOutputFile={output_pdf}",
             str(input_pdf),
         ],
-        timeout=600,
     )
     return output_pdf
