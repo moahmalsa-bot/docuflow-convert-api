@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.conversion_routes import router as conversion_router
 from app.api.pdf_routes import router as pdf_router
-from app.utils.files import ApiError, ConversionError
+from app.utils.files import ApiError, ConversionError, cleanup_stale_temp_jobs
 
 
 logger = logging.getLogger("docuflow")
@@ -18,6 +18,7 @@ logger = logging.getLogger("docuflow")
 
 def create_app() -> FastAPI:
     configure_logging()
+    cleanup_stale_temp_jobs()
     app = FastAPI(
         title="DocuFlow API",
         version="1.0.0",

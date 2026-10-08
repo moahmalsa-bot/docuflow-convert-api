@@ -14,7 +14,7 @@ from app.converters import (
 )
 from app.services.excel_pdf import excel_download_response, excel_to_pdf_job
 from app.utils.files import cleanup_path, create_job_dir, response_for_file, save_upload, save_uploads
-from app.utils.validation import validate_pdf_page_count
+from app.utils.validation import validate_pdf_batch_page_count, validate_pdf_page_count
 
 
 router = APIRouter()
@@ -135,8 +135,8 @@ async def merge_pdf_endpoint(files: list[UploadFile] = File(...)):
     job_dir = create_job_dir()
     try:
         pdfs = await save_uploads(files, job_dir, [".pdf"], "PDF", min_count=2)
-        for pdf in pdfs:
-            validate_pdf_page_count(pdf)
+        page_counts = [validate_pdf_page_count(pdf) for pdf in pdfs]
+        validate_pdf_batch_page_count(page_counts)
         output_pdf = job_dir / "merged.pdf"
         merge_pdfs(pdfs, output_pdf)
         return response_for_file(output_pdf, job_dir)

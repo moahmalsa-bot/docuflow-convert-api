@@ -22,6 +22,7 @@ REQUIRED = [
     "app/utils/validation.py",
     "Dockerfile",
     "requirements.txt",
+    "tests/test_usage_protection.py",
 ]
 
 
@@ -73,3 +74,34 @@ for path in APP.rglob("*.py"):
         fail(f"shell=True is forbidden: {path.relative_to(ROOT)}")
 
 print("Architecture contracts: PASS")
+
+
+# Upload/conversion protections are release contracts, not optional UI behavior.
+files_text = (ROOT / "app/utils/files.py").read_text(encoding="utf-8")
+validation_text = (ROOT / "app/utils/validation.py").read_text(encoding="utf-8")
+converters_text = (ROOT / "app/converters.py").read_text(encoding="utf-8")
+
+for token in (
+    "MAX_UPLOAD_BYTES",
+    "MAX_BATCH_UPLOAD_BYTES",
+    "MAX_UPLOAD_FILES",
+    "validate_upload_filename",
+    "cleanup_stale_temp_jobs",
+    "COMMAND_TIMEOUT_SECONDS",
+):
+    if token not in files_text:
+        fail(f"Usage protection missing from files.py: {token}")
+
+for token in (
+    "MAX_PDF_PAGES",
+    "MAX_MERGED_PDF_PAGES",
+    "Encrypted/password-protected PDFs are not supported",
+    "Invalid or corrupted PDF",
+):
+    if token not in validation_text:
+        fail(f"PDF protection missing from validation.py: {token}")
+
+if "timeout=900" in converters_text or "timeout=600" in converters_text:
+    fail("Converters must use the centralized bounded command timeout")
+
+print("Usage protection contracts: PASS")

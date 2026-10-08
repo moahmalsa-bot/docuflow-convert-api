@@ -9,7 +9,7 @@ from app.services.pdf_analysis import analyze_pdf_document
 from app.services.pdf_edit import apply_ai_edit_operations, apply_pdf_edits
 from app.services.pdf_render import render_document_page
 from app.utils.files import cleanup_path, parse_operations_json, response_for_file, save_upload
-from app.utils.validation import validate_pdf_page_count
+from app.utils.validation import validate_operation_count, validate_pdf_page_count
 
 
 router = APIRouter()
@@ -22,6 +22,7 @@ async def edit_pdf_endpoint(file: UploadFile = File(...), operations_json: str =
         input_pdf = await save_upload(file, job_dir, [".pdf"], "PDF")
         validate_pdf_page_count(input_pdf)
         operations = parse_operations_json(operations_json)
+        validate_operation_count(operations)
         output_pdf = job_dir / f"{input_pdf.stem}-edited.pdf"
         apply_pdf_edits(input_pdf, output_pdf, operations)
         return response_for_file(output_pdf, job_dir)

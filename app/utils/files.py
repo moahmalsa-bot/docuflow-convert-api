@@ -17,7 +17,12 @@ from starlette.responses import FileResponse
 
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
-COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "900"))
+MAX_BATCH_UPLOAD_MB = int(os.getenv("MAX_BATCH_UPLOAD_MB", "200"))
+MAX_BATCH_UPLOAD_BYTES = MAX_BATCH_UPLOAD_MB * 1024 * 1024
+MAX_UPLOAD_FILES = int(os.getenv("MAX_UPLOAD_FILES", "20"))
+MAX_FILENAME_CHARS = int(os.getenv("MAX_FILENAME_CHARS", "180"))
+COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "300"))
+TEMP_JOB_TTL_HOURS = int(os.getenv("TEMP_JOB_TTL_HOURS", "2"))
 
 MIME_TYPES = {
     ".pdf": "application/pdf",
@@ -47,10 +52,27 @@ class ApiError(RuntimeError):
         self.code = code
 
 
+def validate_upload_filename(filename: str, label: str = "File") -> str:
+    if not filename:
+        raise HTTPException(status_code=400, detail=f"{label} filename is required")
+    if len(filename) > MAX_FILENAME_CHARS:
+        raise HTTPException(status_code=400, detail=f"{label} filename is too long")
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail=f"{label} filename contains a path")
+    if re.search(r"[\x00-\x1f\x7f]", filename):
+        raise HTTPException(status_code=400, detail=f"{label} filename contains control characters")
+
+    name = filename.strip()
+    if name != filename or name in {"", ".", ".."} or name.startswith(".") or name.endswith("."):
+        raise HTTPException(status_code=400, detail=f"{label} filename is not allowed")
+    return name
+
+
 def sanitize_filename(filename: str, fallback: str = "upload") -> str:
     name = Path(filename or fallback).name.strip().replace("\x00", "")
     name = re.sub(r"[^A-Za-z0-9._ -]+", "_", name)
     name = re.sub(r"\s+", " ", name).strip(" .")
+    name = name[:MAX_FILENAME_CHARS].rstrip(" .")
     return name or fallback
 
 
@@ -73,7 +95,32 @@ def ensure_ext(path: Path, extensions: Iterable[str], label: str) -> None:
         )
 
 
+def cleanup_stale_temp_jobs(
+    max_age_seconds: int | None = None,
+    temp_root: Path | None = None,
+) -> int:
+    root = temp_root or Path(tempfile.gettempdir())
+    max_age = max_age_seconds if max_age_seconds is not None else TEMP_JOB_TTL_HOURS * 3600
+    if not root.exists():
+        return 0
+
+    now = time.time()
+    removed = 0
+    for child in root.glob("docuflow-*"):
+        try:
+            if child.is_symlink() or not child.is_dir():
+                continue
+            if now - child.stat().st_mtime <= max_age:
+                continue
+            cleanup_path(child)
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def create_job_dir() -> Path:
+    cleanup_stale_temp_jobs()
     return Path(tempfile.mkdtemp(prefix="docuflow-"))
 
 
@@ -87,17 +134,25 @@ def cleanup_old_directories(root: Path, max_age_seconds: int) -> int:
     now = time.time()
     removed = 0
     for child in root.iterdir():
-        if child.is_dir() and now - child.stat().st_mtime > max_age_seconds:
-            cleanup_path(child)
-            removed += 1
+        try:
+            if child.is_symlink() or not child.is_dir():
+                continue
+            if now - child.stat().st_mtime > max_age_seconds:
+                cleanup_path(child)
+                removed += 1
+        except OSError:
+            continue
     return removed
 
 
 async def save_upload(upload: UploadFile, directory: Path, allowed_exts: Iterable[str], label: str) -> Path:
-    if not upload.filename:
-        raise HTTPException(status_code=400, detail=f"{label} filename is required")
+    filename = validate_upload_filename(upload.filename or "", label)
+    declared_size = getattr(upload, "size", None)
+    if declared_size is not None and declared_size > MAX_UPLOAD_BYTES:
+        await upload.close()
+        raise HTTPException(status_code=413, detail=f"Upload exceeds MAX_UPLOAD_MB={MAX_UPLOAD_MB}")
 
-    output_path = unique_path(directory, upload.filename)
+    output_path = unique_path(directory, filename)
     ensure_ext(output_path, allowed_exts, label)
 
     total = 0
@@ -114,10 +169,14 @@ async def save_upload(upload: UploadFile, directory: Path, allowed_exts: Iterabl
                         detail=f"Upload exceeds MAX_UPLOAD_MB={MAX_UPLOAD_MB}",
                     )
                 file_obj.write(chunk)
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
     finally:
         await upload.close()
 
     if total == 0:
+        output_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"{label} is empty")
     return output_path
 
@@ -131,7 +190,22 @@ async def save_uploads(
 ) -> list[Path]:
     if len(uploads) < min_count:
         raise HTTPException(status_code=400, detail=f"At least {min_count} {label} file(s) required")
-    return [await save_upload(upload, directory, allowed_exts, f"{label} file") for upload in uploads]
+    if len(uploads) > MAX_UPLOAD_FILES:
+        raise HTTPException(status_code=413, detail=f"Too many files; max is {MAX_UPLOAD_FILES}")
+
+    declared_total = sum(int(size) for size in (getattr(upload, "size", None) for upload in uploads) if size is not None)
+    if declared_total > MAX_BATCH_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Batch exceeds MAX_BATCH_UPLOAD_MB={MAX_BATCH_UPLOAD_MB}")
+
+    paths: list[Path] = []
+    actual_total = 0
+    for upload in uploads:
+        path = await save_upload(upload, directory, allowed_exts, f"{label} file")
+        paths.append(path)
+        actual_total += path.stat().st_size
+        if actual_total > MAX_BATCH_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Batch exceeds MAX_BATCH_UPLOAD_MB={MAX_BATCH_UPLOAD_MB}")
+    return paths
 
 
 def parse_operations_json(raw_json: str | None) -> list[dict]:
@@ -150,8 +224,8 @@ def command_exists(command: str) -> bool:
     return shutil.which(command) is not None
 
 
-def run_command(command: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
-    timeout = timeout or COMMAND_TIMEOUT_SECONDS
+def run_command(command: list[str], timeout: int | float | None = None) -> subprocess.CompletedProcess[str]:
+    effective_timeout = timeout if timeout is not None else COMMAND_TIMEOUT_SECONDS
     try:
         result = subprocess.run(
             command,
@@ -159,12 +233,12 @@ def run_command(command: list[str], timeout: int | None = None) -> subprocess.Co
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            timeout=effective_timeout,
         )
     except FileNotFoundError as exc:
         raise ConversionError(f"Required command not found: {command[0]}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise ConversionError(f"Command timed out after {timeout}s: {' '.join(command)}") from exc
+        raise ConversionError(f"Command timed out after {effective_timeout}s: {' '.join(command)}") from exc
 
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip() or "unknown command failure"
@@ -202,4 +276,3 @@ def response_for_file(path: Path, job_dir: Path, download_name: str | None = Non
         filename=download_name or path.name,
         background=BackgroundTask(cleanup_path, job_dir),
     )
-

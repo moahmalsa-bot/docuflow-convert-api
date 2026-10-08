@@ -36,7 +36,6 @@ def ocr_pdf(input_pdf: Path, output_pdf: Path) -> Path:
             str(input_pdf),
             str(output_pdf),
         ],
-        timeout=900,
     )
     return output_pdf
 
@@ -165,7 +164,6 @@ def office_to_pdf(input_file: Path, output_dir: Path) -> Path:
             str(output_dir),
             str(input_file),
         ],
-        timeout=600,
     )
     output_pdf = output_dir / f"{input_file.stem}.pdf"
     if not output_pdf.exists():
