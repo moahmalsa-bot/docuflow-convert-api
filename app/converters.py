@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import fitz
@@ -25,12 +26,17 @@ def pdf_has_selectable_text(pdf_path: Path, min_chars: int = 20) -> bool:
 
 
 def ocr_pdf(input_pdf: Path, output_pdf: Path) -> Path:
+    languages = os.getenv("OCR_LANGUAGES", "ara+eng")
     run_command(
         [
             "ocrmypdf",
             "--skip-text",
             "--deskew",
             "--rotate-pages",
+            "--oversample",
+            os.getenv("OCR_RENDER_DPI", "300"),
+            "--language",
+            languages,
             "--optimize",
             "1",
             str(input_pdf),

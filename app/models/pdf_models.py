@@ -28,6 +28,10 @@ class PdfPageAnalysis(BaseModel):
     page_height: float
     render_width: int
     render_height: int
+    ocr_used: bool = False
+    ocr_languages: list[str] = Field(default_factory=list)
+    detected_language: str = "unknown"
+    text_direction: Literal["rtl", "ltr", "mixed"] = "ltr"
     objects: list[PdfObject] = Field(default_factory=list)
 
 
@@ -36,6 +40,8 @@ class PdfAnalyzeResponse(BaseModel):
     original_file_name: str
     page_count: int
     scanned_pages: list[int]
+    detected_languages: list[str] = Field(default_factory=list)
+    ocr_languages: list[str] = Field(default_factory=list)
     pages: list[PdfPageAnalysis]
     objects: list[PdfObject]
     text_object_count: int

@@ -16,6 +16,8 @@ REQUIRED = [
     "app/services/ai_planner.py",
     "app/services/document_history.py",
     "app/services/pdf_analysis.py",
+    "app/services/ocr.py",
+    "app/services/layout_analysis.py",
     "app/services/pdf_edit.py",
     "app/services/pdf_render.py",
     "app/utils/files.py",
@@ -23,6 +25,7 @@ REQUIRED = [
     "Dockerfile",
     "requirements.txt",
     "tests/test_usage_protection.py",
+    "tests/test_ocr_layout.py",
 ]
 
 
@@ -105,3 +108,38 @@ if "timeout=900" in converters_text or "timeout=600" in converters_text:
     fail("Converters must use the centralized bounded command timeout")
 
 print("Usage protection contracts: PASS")
+
+
+# OCR quality contracts: Arabic+English, scanned pages, OCR table layout and image metadata.
+ocr_text = (ROOT / "app/services/ocr.py").read_text(encoding="utf-8")
+analysis_text = (ROOT / "app/services/pdf_analysis.py").read_text(encoding="utf-8")
+layout_text = (ROOT / "app/services/layout_analysis.py").read_text(encoding="utf-8")
+image_text = (ROOT / "app/services/image_detection.py").read_text(encoding="utf-8")
+docker_text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+for token in (
+    'DEFAULT_OCR_LANGUAGES = "ara+eng"',
+    "OCR_RENDER_DPI",
+    "preserve_interword_spaces=1",
+    "script_profile",
+    "page_image_coverage",
+):
+    if token not in ocr_text:
+        fail(f"OCR contract missing: {token}")
+
+for token in ("infer_ocr_tables", "merge_ocr_text", "detected_language", "ocr_languages"):
+    if token not in analysis_text:
+        fail(f"PDF analysis OCR integration missing: {token}")
+
+for token in ("ocr_layout", "column_count", "row_count"):
+    if token not in layout_text:
+        fail(f"OCR table-layout contract missing: {token}")
+
+for token in ("page_coverage", "is_page_scan_candidate"):
+    if token not in image_text:
+        fail(f"Image-analysis contract missing: {token}")
+
+if "tesseract-ocr-ara" not in docker_text or "OCR_LANGUAGES=ara+eng" not in docker_text:
+    fail("Docker image must ship Arabic and English Tesseract data")
+
+print("OCR Arabic/layout contracts: PASS")

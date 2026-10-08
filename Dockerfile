@@ -3,7 +3,11 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PORT=8000
+    PORT=8000 \
+    OCR_LANGUAGES=ara+eng \
+    OCR_RENDER_DPI=300 \
+    OCR_PSM=3 \
+    PDF_OCR_ENGINE=tesseract
 
 WORKDIR /app
 
@@ -23,8 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     tesseract-ocr \
     tesseract-ocr-eng \
+    tesseract-ocr-ara \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN tesseract --list-langs | grep -qx ara && tesseract --list-langs | grep -qx eng
 
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
