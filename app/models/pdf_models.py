@@ -48,6 +48,12 @@ class PdfAnalyzeResponse(BaseModel):
     image_object_count: int
     table_object_count: int
     current_version_id: str
+    delete_token: str
+    delete_url: str
+    expires_at: int
+    retention_hours: int
+    training_use: bool = False
+    privacy: dict[str, Any] = Field(default_factory=dict)
 
 
 class EditApplyResponse(BaseModel):
