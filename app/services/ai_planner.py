@@ -40,6 +40,13 @@ def _call_ai_provider(instruction: str, selected_objects: list[dict[str, Any]], 
     if not provider or not api_key:
         return _local_edit_plan(instruction, selected_objects)
 
+    # Privacy gate: document content is never sent to an external AI service
+    # unless the operator explicitly confirms that provider is configured for
+    # no-training/API data use. The local deterministic planner remains available.
+    no_training_confirmed = os.getenv("AI_PROVIDER_NO_TRAINING_CONFIRMED", "").strip().lower() in {"1", "true", "yes"}
+    if not no_training_confirmed:
+        return _local_edit_plan(instruction, selected_objects)
+
     base_url = os.getenv("AI_BASE_URL")
     if provider == "openai":
         url = base_url or "https://api.openai.com/v1/chat/completions"
@@ -58,8 +65,9 @@ def _call_ai_provider(instruction: str, selected_objects: list[dict[str, Any]], 
         with urllib.request.urlopen(request, timeout=60) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise ConversionError(f"AI provider request failed: {detail}") from exc
+        # Never echo provider bodies: they may contain document snippets.
+        exc.read()
+        raise ConversionError(f"AI provider request failed with HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
         raise ConversionError(f"AI provider request failed: {exc.reason}") from exc
 
