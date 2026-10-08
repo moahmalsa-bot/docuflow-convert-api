@@ -9,6 +9,10 @@ from app.models.pdf_models import EditApplyResponse, HistoryResponse, PdfAnalyze
 
 EXPECTED = {
     ("GET", "/health"),
+    ("GET", "/privacy"),
+    ("GET", "/privacy-policy"),
+    ("DELETE", "/pdf/session/{document_id}"),
+    ("DELETE", "/jobs/{job_id}"),
     ("POST", "/convert/pdf-to-word"),
     ("POST", "/convert/pdf-to-powerpoint"),
     ("POST", "/convert/pdf-to-excel"),
@@ -75,6 +79,7 @@ required_fields = {
     PdfAnalyzeResponse: {
         "document_id", "original_file_name", "page_count", "scanned_pages", "pages", "objects",
         "text_object_count", "image_object_count", "table_object_count", "current_version_id",
+        "delete_token", "delete_url", "expires_at", "retention_hours", "training_use", "privacy",
     },
     EditApplyResponse: {
         "fileName", "downloadUrl", "document_id", "version_id", "can_undo", "can_redo", "warnings",
