@@ -4,7 +4,6 @@ from typing import Any
 
 import fitz
 
-from app.services.image_detection import bbox
 from app.utils.coordinates import normalized_box
 from app.utils.files import run_command
 
